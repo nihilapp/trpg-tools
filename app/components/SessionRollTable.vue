@@ -1,0 +1,667 @@
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue';
+
+import RollEmptyState from '~/components/roll-table/RollEmptyState.vue';
+import RollPrimaryButton from '~/components/roll-table/RollPrimaryButton.vue';
+import RollTableShell from '~/components/roll-table/RollTableShell.vue';
+import { parseCsvObjects } from '~/utils/csv';
+
+interface Adventurer {
+  route_id: string;
+  route_name: string;
+  description: string;
+  is_hidden: string;
+}
+
+interface RequestType {
+  notice_no: string;
+  notice_id: string;
+  route_id: string;
+  route_name: string;
+  notice_group: string;
+  notice_name: string;
+  recommended_rank: string;
+  public_summary: string;
+  primary_objective: string;
+  field_situation: string;
+  unknown_factor: string;
+  complication: string;
+  record_targets: string;
+  failure_condition: string;
+  follow_up: string;
+  public_notice_text: string;
+}
+
+interface Contract {
+  concept_id: string;
+  notice_no: string;
+  route_id: string;
+  route_name: string;
+  notice_group: string;
+  notice_name: string;
+  concept_no: string;
+  concept_keyword: string;
+  public_title: string;
+  recommended_rank: string;
+  public_summary: string;
+  primary_objective: string;
+  field_situation: string;
+  unknown_factor: string;
+  complication: string;
+  record_target: string;
+  failure_condition: string;
+  follow_up: string;
+  public_notice_text: string;
+}
+
+interface Theme {
+  '주사위': string;
+  '테마': string;
+  '몬스터 예시': string;
+  '환경 설명': string;
+  '앙그라': string;
+}
+
+interface Terrain {
+  '주사위': string;
+  '지형명': string;
+  '지형 설명': string;
+  'isAngra': string;
+}
+
+interface RollResult {
+  id: number;
+  routeId: string;
+  adventurer: string;
+  noticeGroup: string;
+  requestType: string;
+  contract: string;
+  keyword: string;
+  rank: string;
+  summary: string;
+  objective: string;
+  situation: string;
+  unknown: string;
+  complication: string;
+  record: string;
+  failure: string;
+  followup: string;
+  theme: string;
+  themeMonster: string;
+  themeDesc: string;
+  terrain: string;
+  terrainDesc: string;
+  isAngraTheme: boolean;
+  isAngraTerrain: boolean;
+  isAngraNotice: boolean;
+  timestamp: Date;
+}
+
+const rollHistory = ref<RollResult[]>([]);
+const currentResult = ref<RollResult | null>(null);
+const includeClassified = ref(false);
+const includeAngra = ref(false);
+const isRolling = ref(false);
+const isLoading = ref(true);
+const loadError = ref<string | null>(null);
+const selectedHistoryId = ref<number | null>(null);
+
+const adventurers = ref<Adventurer[]>([]);
+const requestTypes = ref<RequestType[]>([]);
+const contracts = ref<Contract[]>([]);
+const themes = ref<Theme[]>([]);
+const terrains = ref<Terrain[]>([]);
+
+// 앙그라권 의뢰 여부 판별 (notice_group 기준)
+// '앙그라권' 이 notice_group 에 포함되면 모두 앙그라로 판별
+function isAngraNoticeGroup(noticeGroup: string): boolean {
+  return noticeGroup.includes('앙그라권');
+}
+
+// CSV 파일 로드
+async function loadCSV() {
+  try {
+    const files = [
+      { name: '모험가 분류', url: '/data/roll-tables/모험가 분류.csv' },
+      { name: '의뢰 유형', url: '/data/roll-tables/의뢰 유형.csv' },
+      { name: '공고 상세 내용', url: '/data/roll-tables/공고 상세 내용.csv' },
+      { name: '테마', url: '/data/roll-tables/테마.csv' },
+      { name: '지형', url: '/data/roll-tables/지형.csv' },
+    ];
+
+    const responses = await Promise.all(
+      files.map(f => fetch(f.url).then((res) => {
+        if (!res.ok) throw new Error(`${f.name} 파일 로드 실패: ${res.status}`);
+        return res.text();
+      })),
+    );
+
+    adventurers.value = parseCsvObjects<Adventurer>(responses[0]);
+    requestTypes.value = parseCsvObjects<RequestType>(responses[1]);
+    contracts.value = parseCsvObjects<Contract>(responses[2]);
+    themes.value = parseCsvObjects<Theme>(responses[3]);
+    terrains.value = parseCsvObjects<Terrain>(responses[4]);
+
+    isLoading.value = false;
+    loadError.value = null;
+  }
+  catch (error) {
+    console.error('CSV 로드 실패:', error);
+    loadError.value = error instanceof Error ? error.message : '알 수 없는 오류';
+    isLoading.value = false;
+  }
+}
+
+// 필터링된 모험가 (기밀 포함 여부 + 사용 가능한 의뢰 존재 여부)
+const filteredAdventurers = computed(() => {
+  let result = adventurers.value;
+
+  // 기밀 제외
+  if (!includeClassified.value) {
+    result = result.filter(a => a.route_id !== 'classified');
+  }
+
+  // 현재 필터 상태에서 사용 가능한 의뢰가 있는 모험가만 포함
+  result = result.filter((a) => {
+    const types = requestTypes.value.filter(r => r.route_id === a.route_id);
+    if (types.length === 0) return false;
+
+    // 앙그라 제외 모드면 앙그라권 의뢰 제외 후 확인
+    if (!includeAngra.value) {
+      const nonAngraTypes = types.filter(r => !isAngraNoticeGroup(r.notice_group));
+      return nonAngraTypes.length > 0;
+    }
+
+    return true;
+  });
+
+  return result;
+});
+
+// 필터링된 테마 (앙그라 포함 여부)
+const filteredThemes = computed(() => {
+  if (includeAngra.value) {
+    return themes.value;
+  }
+  return themes.value.filter(t => t['앙그라']?.toLowerCase() !== 'true');
+});
+
+// 필터링된 지형 (앙그라 포함 여부)
+const filteredTerrains = computed(() => {
+  if (includeAngra.value) {
+    return terrains.value;
+  }
+  return terrains.value.filter(t => t['isAngra']?.toLowerCase() !== 'true');
+});
+
+// 모험가별 의뢰 유형 가져오기 (앙그라 필터 적용됨)
+function getRequestTypesForRoute(routeId: string): RequestType[] {
+  let types = requestTypes.value.filter(r => r.route_id === routeId);
+
+  // 앙그라 제외 모드면 앙그라권 의뢰 제외
+  if (!includeAngra.value) {
+    types = types.filter(r => !isAngraNoticeGroup(r.notice_group));
+  }
+
+  return types;
+}
+
+// 최대 10 개만 표시
+const displayHistory = computed(() => {
+  return rollHistory.value.slice(0, 10);
+});
+
+// 복사용 한 줄 텍스트
+const copyText = computed(() => {
+  if (!currentResult.value) return '';
+  const r = currentResult.value;
+  return `[모험가] ${r.adventurer} [의뢰] ${r.requestType} [순위] ${r.rank} [제목] ${r.contract} [키워드] ${r.keyword} [요약] ${r.summary} [목표] ${r.objective} [현장] ${r.situation} [미지] ${r.unknown} [변수] ${r.complication} [기록] ${r.record} [실패] ${r.failure} [후속] ${r.followup} [테마] ${r.theme} (${r.themeMonster}) ${r.themeDesc} [지형] ${r.terrain} ${r.terrainDesc}`;
+});
+
+// 랜덤 선택 함수
+function randomSelect<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+// 주사위 굴리기 (1dN)
+function rollDice(sides: number): number {
+  return Math.floor(Math.random() * sides) + 1;
+}
+
+// 롤 실행
+async function handleRoll() {
+  if (filteredAdventurers.value.length === 0 || isLoading.value) return;
+
+  isRolling.value = true;
+
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  try {
+    // 1. 모험가 선택
+    const selectedAdventurer = randomSelect(filteredAdventurers.value);
+    const routeId = selectedAdventurer.route_id;
+
+    // 2. 해당 모험가의 의뢰 유형만 필터링 (앙그라 필터 적용됨)
+    const availableRequestTypes = getRequestTypesForRoute(routeId);
+    if (availableRequestTypes.length === 0) {
+      throw new Error(`${selectedAdventurer.route_name}에 해당하는 의뢰가 없습니다.`);
+    }
+    const selectedRequest = randomSelect(availableRequestTypes);
+
+    // 3. 해당 의뢰 유형의 공고만 필터링
+    const availableContracts = contracts.value.filter(
+      c => c.notice_no === selectedRequest.notice_no,
+    );
+    const selectedContract = availableContracts.length > 0
+      ? randomSelect(availableContracts)
+      : randomSelect(contracts.value);
+
+    // 4. 테마 선택 (필터링된 목록에서)
+    const availableThemes = filteredThemes.value;
+    const themeDice = rollDice(availableThemes.length);
+    const selectedTheme = availableThemes[themeDice - 1] || randomSelect(availableThemes);
+
+    // 5. 지형 선택 (필터링된 목록에서)
+    const availableTerrains = filteredTerrains.value;
+    const terrainDice = rollDice(availableTerrains.length);
+    const selectedTerrain = availableTerrains[terrainDice - 1] || randomSelect(availableTerrains);
+
+    // 6. 앙그라권 의뢰 여부 판별
+    const isAngraNotice = isAngraNoticeGroup(selectedRequest.notice_group);
+
+    const result: RollResult = {
+      id: Date.now(),
+      routeId,
+      adventurer: selectedAdventurer.route_name,
+      noticeGroup: selectedRequest.notice_group,
+      requestType: selectedRequest.notice_name,
+      contract: selectedContract.public_title,
+      keyword: selectedContract.concept_keyword,
+      rank: selectedContract.recommended_rank,
+      summary: selectedContract.public_summary,
+      objective: selectedContract.primary_objective,
+      situation: selectedContract.field_situation,
+      unknown: selectedContract.unknown_factor,
+      complication: selectedContract.complication,
+      record: selectedContract.record_target,
+      failure: selectedContract.failure_condition,
+      followup: selectedContract.follow_up,
+      theme: selectedTheme['테마'],
+      themeMonster: selectedTheme['몬스터 예시'],
+      themeDesc: selectedTheme['환경 설명'],
+      terrain: selectedTerrain['지형명'],
+      terrainDesc: selectedTerrain['지형 설명'],
+      isAngraTheme: selectedTheme['앙그라']?.toLowerCase() === 'true',
+      isAngraTerrain: selectedTerrain['isAngra']?.toLowerCase() === 'true',
+      isAngraNotice: isAngraNotice,
+      timestamp: new Date(),
+    };
+
+    currentResult.value = result;
+    selectedHistoryId.value = result.id;
+
+    rollHistory.value.unshift(result);
+    if (rollHistory.value.length > 10) {
+      rollHistory.value.pop();
+    }
+  }
+  catch (error) {
+    console.error('롤 실행 중 오류:', error);
+  }
+  finally {
+    isRolling.value = false;
+  }
+}
+
+function clearHistory() {
+  rollHistory.value = [];
+  currentResult.value = null;
+  selectedHistoryId.value = null;
+}
+
+function selectHistory(item: RollResult) {
+  currentResult.value = item;
+  selectedHistoryId.value = item.id;
+}
+
+function copyToClipboard() {
+  if (copyText.value) {
+    navigator.clipboard.writeText(copyText.value);
+  }
+}
+
+// 모험가별 색상
+function getRouteColor(routeId: string): string {
+  const colors: Record<string, string> = {
+    pioneer: 'bg-red-100 text-red-800 border-red-300',
+    solver: 'bg-blue-100 text-blue-800 border-blue-300',
+    hunter: 'bg-green-100 text-green-800 border-green-300',
+    classified: 'bg-purple-100 text-purple-800 border-purple-300',
+  };
+  return colors[routeId] || 'bg-gray-100 text-gray-800 border-gray-300';
+}
+
+// 전체 앙그라 여부 (의뢰 + 테마 + 지형)
+function isAngraResult(item: RollResult): boolean {
+  return item.isAngraNotice || item.isAngraTheme || item.isAngraTerrain;
+}
+
+onMounted(() => {
+  loadCSV();
+});
+</script>
+
+<template>
+  <RollTableShell
+    title='세션 롤 테이블'
+    description='공고를 무작위로 생성하여 세션 아이디어를 얻으세요'
+    max-width-class='max-w-7xl'
+    :is-loading='isLoading'
+    :load-error='loadError'
+    @retry='loadCSV'
+  >
+    <div class='flex gap-6'>
+      <!-- 왼쪽: 생성 이력 -->
+      <div class='w-80 flex-shrink-0'>
+        <div class='flex items-center justify-between mb-4'>
+          <h2 class='text-lg font-semibold text-black-900'>
+            생성 이력
+          </h2>
+          <span class='text-xs text-black-500'>
+            {{ rollHistory.length }} / 10
+          </span>
+        </div>
+
+        <div class='space-y-2 max-h-[700px] overflow-y-auto pr-2'>
+          <div
+            v-for='item in displayHistory'
+            :key='item.id'
+            @click='selectHistory(item)'
+            :class="[
+              'p-3 bg-white border rounded-lg cursor-pointer transition-all hover:border-blue-300',
+              selectedHistoryId === item.id ? 'border-blue-500 bg-blue-50' : 'border-black-100'
+            ]"
+          >
+            <div class='flex flex-wrap items-center gap-1 mb-1'>
+              <span :class="[
+                'px-1.5 py-0.5 text-xs rounded border',
+                getRouteColor(item.routeId)
+              ]">
+                {{ item.adventurer }}
+              </span>
+              <span class='px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded'>
+                {{ item.rank }}
+              </span>
+              <span v-if='isAngraResult(item)' class='px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded'>
+                앙그라
+              </span>
+            </div>
+            <div class='text-xs text-black-500 mb-1'>
+              {{ item.noticeGroup }} · {{ item.requestType }}
+            </div>
+            <div class='text-sm font-medium text-black-900 truncate'>
+              {{ item.contract }}
+            </div>
+            <div class='text-xs text-black-500 mt-1'>
+              {{ item.timestamp.toLocaleTimeString() }}
+            </div>
+          </div>
+
+          <div
+            v-if='rollHistory.length === 0'
+            class='text-center py-8 text-black-500 text-sm'
+          >
+            생성된 공고가 없습니다
+          </div>
+        </div>
+
+        <button
+          v-if='rollHistory.length > 0'
+          @click='clearHistory'
+          class='w-full mt-3 py-2 text-sm text-black-600 hover:text-red-600 transition-colors border border-black-200 rounded-lg hover:bg-red-50'
+        >
+          이력 지우기
+        </button>
+      </div>
+
+      <!-- 오른쪽: 결과 및 컨트롤 -->
+      <div class='flex-1 space-y-4'>
+        <!-- 옵션 + 버튼 + 복사 -->
+        <div class='flex items-center gap-4'>
+          <div class='p-4 bg-black-50 rounded-lg flex flex-col gap-3'>
+            <label class='flex items-center gap-3 cursor-pointer'>
+              <input
+                v-model='includeClassified'
+                type='checkbox'
+                class='w-5 h-5 rounded border-black-300 text-purple-600 focus:ring-purple-500'
+              >
+              <span class='text-sm font-medium text-black-700'>
+                기밀 공고 포함
+              </span>
+            </label>
+            <label class='flex items-center gap-3 cursor-pointer'>
+              <input
+                v-model='includeAngra'
+                type='checkbox'
+                class='w-5 h-5 rounded border-black-300 text-red-600 focus:ring-red-500'
+              >
+              <span class='text-sm font-medium text-black-700'>
+                앙그라권 의뢰/테마/지형 포함
+              </span>
+            </label>
+          </div>
+
+          <RollPrimaryButton
+            label='공고 생성하기'
+            loading-label='굴리는 중...'
+            size='lg'
+            :is-loading='isRolling'
+            :disabled='isRolling || filteredAdventurers.length === 0'
+            @click='handleRoll'
+          >
+            <template #icon>
+              <svg class='w-6 h-6' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+                <rect x='2' y='2' width='20' height='20' rx='5' ry='5' />
+                <circle cx='12' cy='12' r='1' />
+                <circle cx='8' cy='8' r='1' />
+                <circle cx='16' cy='16' r='1' />
+                <circle cx='8' cy='16' r='1' />
+                <circle cx='16' cy='8' r='1' />
+              </svg>
+            </template>
+          </RollPrimaryButton>
+
+          <button
+            v-if='currentResult'
+            @click='copyToClipboard'
+            class='py-4 px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-lg transition-all flex items-center gap-2 shadow-lg'
+            title='한 줄로 복사'
+          >
+            <svg class='w-6 h-6' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'>
+              <rect x='9' y='9' width='13' height='13' rx='2' ry='2' />
+              <path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' />
+            </svg>
+            <span>복사</span>
+          </button>
+        </div>
+
+        <!-- 결과 표시 -->
+        <div v-if='currentResult' class='p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200'>
+          <div class='space-y-4'>
+            <div class='flex flex-wrap gap-2'>
+              <span :class="[
+                'px-3 py-1 text-white text-sm font-semibold rounded-full border',
+                currentResult.routeId === 'pioneer' ? 'bg-red-600 border-red-700' :
+                currentResult.routeId === 'solver' ? 'bg-blue-600 border-blue-700' :
+                currentResult.routeId === 'hunter' ? 'bg-green-600 border-green-700' :
+                'bg-purple-600 border-purple-700'
+              ]">
+                {{ currentResult.adventurer }}
+              </span>
+              <span class='px-3 py-1 bg-indigo-500 text-white text-sm font-semibold rounded-full'>
+                {{ currentResult.requestType }}
+              </span>
+              <span class='px-3 py-1 bg-purple-500 text-white text-sm font-semibold rounded-full'>
+                {{ currentResult.rank }}
+              </span>
+              <span v-if='isAngraResult(currentResult)' class='px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded-full animate-pulse'>
+                앙그라
+              </span>
+            </div>
+
+            <div class='pt-3 border-t border-blue-200'>
+              <div class='text-xs text-black-500 mb-1'>
+                공고 제목
+              </div>
+              <div class='text-xl font-bold text-blue-700'>
+                {{ currentResult.contract }}
+              </div>
+              <div class='text-sm text-black-600 mt-1'>
+                <span class='font-semibold'>
+                  키워드:
+                </span> {{ currentResult.keyword }}
+              </div>
+            </div>
+
+            <div class='pt-3 border-t border-blue-200'>
+              <div class='text-xs text-black-500 mb-1'>
+                요약
+              </div>
+              <p class='text-black-800'>
+                {{ currentResult.summary }}
+              </p>
+            </div>
+
+            <div class='grid grid-cols-2 gap-4 pt-3 border-t border-blue-200'>
+              <div>
+                <div class='flex items-center gap-2 mb-1'>
+                  <span class='text-xs text-black-500'>
+                    테마
+                  </span>
+                  <span v-if='currentResult.isAngraTheme' class='px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded'>
+                    앙그라
+                  </span>
+                </div>
+                <div class='text-md font-semibold text-black-700'>
+                  {{ currentResult.theme }}
+                </div>
+                <div class='text-xs text-black-600 mt-1'>
+                  <span class='font-semibold'>
+                    몬스터:
+                  </span> {{ currentResult.themeMonster }}
+                </div>
+                <div class='text-xs text-black-600 mt-1'>
+                  <span class='font-semibold'>
+                    환경:
+                  </span> {{ currentResult.themeDesc }}
+                </div>
+              </div>
+              <div>
+                <div class='flex items-center gap-2 mb-1'>
+                  <span class='text-xs text-black-500'>
+                    지형
+                  </span>
+                  <span v-if='currentResult.isAngraTerrain' class='px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded'>
+                    앙그라
+                  </span>
+                </div>
+                <div class='text-md font-semibold text-black-700'>
+                  {{ currentResult.terrain }}
+                </div>
+                <div class='text-xs text-black-600 mt-1'>
+                  {{ currentResult.terrainDesc }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <RollEmptyState v-else message='왼쪽 이력을 선택하거나 상단 버튼을 눌러 공고를 생성하세요' padding-class='py-8' />
+
+        <!-- 공고 상세 정보 (한 줄) -->
+        <div v-if='currentResult' class='p-4 bg-white rounded-lg border border-black-200'>
+          <div class='flex items-center justify-between mb-2'>
+            <h3 class='text-sm font-semibold text-black-900'>
+              공고 상세 (한 줄)
+            </h3>
+            <button
+              @click='copyToClipboard'
+              class='text-xs text-blue-600 hover:text-blue-700 underline'
+            >
+              복사
+            </button>
+          </div>
+          <p class='text-xs text-black-700 font-mono whitespace-pre-wrap break-all'>
+            {{ copyText }}
+          </p>
+        </div>
+
+        <!-- 상세 정보 -->
+        <div v-if='currentResult' class='p-6 bg-white rounded-lg border border-black-200'>
+          <h3 class='text-lg font-semibold text-black-900 mb-4'>
+            공고 상세 정보
+          </h3>
+
+          <div class='grid grid-cols-2 gap-4'>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                주요 목표
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.objective }}
+              </p>
+            </div>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                현장 상황
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.situation }}
+              </p>
+            </div>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                미지 요소
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.unknown }}
+              </p>
+            </div>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                복잡성 / 변수
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.complication }}
+              </p>
+            </div>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                기록 대상
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.record }}
+              </p>
+            </div>
+            <div>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                실패 조건
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.failure }}
+              </p>
+            </div>
+            <div class='col-span-2'>
+              <div class='text-xs font-semibold text-black-500 uppercase mb-1'>
+                후속 조치
+              </div>
+              <p class='text-sm text-black-800'>
+                {{ currentResult.followup }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </RollTableShell>
+</template>
