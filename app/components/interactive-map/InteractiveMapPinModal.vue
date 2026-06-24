@@ -1,14 +1,14 @@
 <template>
   <div
-    class='absolute inset-0 z-[1500] flex items-center justify-center bg-black/60 backdrop-blur-sm'
+    class='absolute inset-0 z-[1500] flex items-center justify-center overflow-hidden bg-black/60 p-4 backdrop-blur-sm'
     @click.self="$emit('close')"
   >
-    <div class='mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-neutral-900 p-6 shadow-2xl'>
+    <div class='flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-neutral-900 shadow-2xl'>
       <!-- Header -->
-      <div class='mb-6 flex items-start justify-between'>
+      <div class='flex items-start justify-between px-6 pb-4 pt-6'>
         <div>
           <p class='text-xs text-neutral-400'>
-            {{ pin.kind === 'landmark' ? '랜드마크' : '세션 기록' }}
+            {{ pinKindLabel }}
           </p>
           <h2 class='text-2xl font-semibold text-white'>
             {{ isEditing ? '편집' : pin.name }}
@@ -22,8 +22,9 @@
         </button>
       </div>
 
-      <!-- Edit Form -->
-      <div v-if='isEditing' class='space-y-4'>
+      <div class='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
+        <!-- Edit Form -->
+        <div v-if='isEditing' class='space-y-4'>
         <div>
           <label class='mb-1 block text-sm text-neutral-400'>
             이름
@@ -81,10 +82,10 @@
             placeholder='태그 1, 태그 2, 태그 3'
           >
         </div>
-      </div>
+        </div>
 
-      <!-- View Mode -->
-      <div v-else class='space-y-4'>
+        <!-- View Mode -->
+        <div v-else class='space-y-4'>
         <!-- Image -->
         <div v-if='pin.imageUrl' class='relative overflow-hidden rounded-xl'>
           <img
@@ -133,11 +134,12 @@
           <p>수정일: {{ formatDate(pin.updatedAt) }}</p>
         </div>
       </div>
+      </div>
 
       <!-- Actions -->
-      <div class='mt-6 flex gap-3'>
+      <div class='flex gap-3 border-t border-white/10 px-6 py-4'>
         <button
-          v-if='!isEditing'
+          v-if='canManage && !isEditing'
           class='flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700'
           @click="$emit('edit')"
         >
@@ -158,10 +160,18 @@
           저장
         </button>
         <button
+          v-if='canManage'
           class='flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700'
           @click="$emit('delete', pin.id)"
         >
           삭제
+        </button>
+        <button
+          v-if='!canManage && !isEditing'
+          class='flex-1 rounded-lg bg-neutral-700 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-600'
+          @click="$emit('close')"
+        >
+          닫기
         </button>
       </div>
     </div>
@@ -171,12 +181,16 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue';
 
-import type { MapPinData } from '~/types/interactive-map';
+import { interactiveMapKindLabelMap } from '~/data/interactive-map/kinds';
+import type { MapPinData } from '~/types/interactive-map.types';
 
 const props = defineProps<{
   pin: MapPinData;
   isEditing: boolean;
+  canManage: boolean;
 }>();
+
+const pinKindLabel = computed(() => interactiveMapKindLabelMap[props.pin.kind]);
 
 const emit = defineEmits<{
   close: [];

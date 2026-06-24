@@ -62,3 +62,5 @@ export interface AppConfig {
     route: string;
   };
 }
+
+export type { BaseResponseType as BaseResponse } from './response.types';

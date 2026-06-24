@@ -37,6 +37,9 @@ minimumReleaseAgeExclude:
   - '@tiptap/vue-3@3.26.0'
   - ai@6.0.197
   - uuid@14.0.1
+  - '@ai-sdk/gateway@3.0.134'
+  - ai@6.0.209
+  - autoprefixer@10.5.1
 onlyBuiltDependencies:
   - '@parcel/watcher'
   - esbuild

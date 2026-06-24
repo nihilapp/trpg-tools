@@ -67,8 +67,8 @@ pnpm tsx scripts/generate-tiles.ts
 
 #### 3 단계: 자동 타일 로드
 
-타일이 생성되면 맵이 자동으로 타일 렌더링을 사용합니다.
-타일이 없으면 `luxterra-preview.jpg` 를 사용합니다.
+타일이 생성되어 있어야 맵이 정상 동작합니다.
+현재 인터렉티브 맵은 타일 전용 렌더링만 사용합니다.
 
 ### 타일 구조
 
@@ -98,9 +98,10 @@ export const interactiveMapConfig: MapConfig = {
   name: '룩스테라 전도',
   width: 16320,    // 원본 이미지 너비
   height: 9258,    // 원본 이미지 높이
-  minZoom: -4,     // 최소 줌 레벨
-  maxZoom: 2,      // 최대 줌 레벨
+  minZoom: 0,      // 최소 줌 레벨
+  maxZoom: 4,      // 최대 줌 레벨
   tileSize: 512,   // 타일 크기
+  tilePath: '/tiles/luxterra',
 }
 ```
 
@@ -134,19 +135,19 @@ export const initialPins: MapPinData[] = [
 
 ## 💾 데이터 저장
 
-- 마커 데이터는 **로컬 스토리지**에 자동 저장됩니다
-- `내보내기` 버튼으로 JSON 파일 다운로드 가능
-- `가져오기` 버튼으로 JSON 파일 업로드 가능
+- 마커 데이터는 서버 JSON 파일에 저장됩니다
+- 런타임은 `public/data/interactive-map/luxterra.json` 을 단일 원본으로 사용합니다
 
 ## 🚀 사용법
 
-1. 브라우저에서 `/tools/interactive-map` 으로 이동
-2. 지도를 드래그하여 이동
-3. 휠 또는 줌 컨트롤로 확대/축소
-4. `마커 생성` 버튼 클릭 후 지도에서 위치 선택
-5. 마커 클릭하여 상세 정보 확인/편집
-6. 필터 버튼으로 마커 타입 토글
-7. 검색창으로 마커 검색
+1. `public/tiles/luxterra` 타일이 생성되어 있는지 확인
+2. 브라우저에서 `/tools/interactive-map` 으로 이동
+3. 지도를 드래그하여 이동
+4. 휠 또는 줌 컨트롤로 확대/축소
+5. `마커 생성` 버튼 클릭 후 지도에서 위치 선택
+6. 마커 클릭하여 상세 정보 확인/편집
+7. 필터 버튼으로 마커 타입 토글
+8. 검색창으로 마커 검색
 
 ## 📝 메모
 

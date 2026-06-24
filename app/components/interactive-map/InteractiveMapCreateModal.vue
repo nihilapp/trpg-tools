@@ -1,11 +1,11 @@
 <template>
   <div
-    class='absolute inset-0 z-[1500] flex items-center justify-center bg-black/60 backdrop-blur-sm'
+    class='absolute inset-0 z-[1500] flex items-center justify-center overflow-hidden bg-black/60 p-4 backdrop-blur-sm'
     @click.self="$emit('close')"
   >
-    <div class='mx-4 w-full max-w-lg overflow-y-auto rounded-2xl bg-neutral-900 p-6 shadow-2xl'>
+    <div class='flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-neutral-900 shadow-2xl'>
       <!-- Header -->
-      <div class='mb-6 flex items-start justify-between'>
+      <div class='flex items-start justify-between px-6 pb-4 pt-6'>
         <div>
           <p class='text-xs text-neutral-400'>
             새 마커 생성
@@ -22,35 +22,28 @@
         </button>
       </div>
 
-      <!-- Form -->
-      <div class='space-y-4'>
+      <div class='min-h-0 flex-1 overflow-y-auto px-6 pb-6'>
+        <!-- Form -->
+        <div class='space-y-4'>
         <!-- Type Selection -->
         <div>
           <label class='mb-2 block text-sm text-neutral-400'>
             마커 종류
           </label>
-          <div class='flex gap-3'>
+          <div class='grid grid-cols-2 gap-2'>
             <button
+              v-for='option in interactiveMapKindOptions'
+              :key='option.kind'
+              :data-active='formData.kind === option.kind'
               :class="[
-                'flex-1 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
-                formData.kind === 'landmark'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700',
+                'flex items-center gap-2 rounded-lg px-3 py-3 text-left text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-700',
+                'bg-neutral-800',
+                option.buttonClass,
               ]"
-              @click="formData.kind = 'landmark'"
+              @click='formData.kind = option.kind'
             >
-              🏛️ 랜드마크
-            </button>
-            <button
-              :class="[
-                'flex-1 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
-                formData.kind === 'session'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700',
-              ]"
-              @click="formData.kind = 'session'"
-            >
-              📍 세션 위치
+              <Icon :icon='option.icon' class='h-4 w-4' />
+              {{ option.label }}
             </button>
           </div>
         </div>
@@ -125,9 +118,10 @@
           </p>
         </div>
       </div>
+      </div>
 
       <!-- Actions -->
-      <div class='mt-6 flex gap-3'>
+      <div class='flex gap-3 border-t border-white/10 px-6 py-4'>
         <button
           class='flex-1 rounded-lg bg-neutral-700 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-600'
           @click="$emit('close')"
@@ -148,7 +142,8 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue';
 
-import type { MapPinData, MapPinKind } from '~/types/interactive-map';
+import { interactiveMapKindOptions } from '~/data/interactive-map/kinds';
+import type { MapPinData, MapPinKind } from '~/types/interactive-map.types';
 
 const props = defineProps<{
   position: { x: number; y: number } | null;
@@ -160,7 +155,7 @@ const emit = defineEmits<{
 }>();
 
 const formData = ref({
-  kind: 'landmark' as MapPinKind,
+  kind: 'nation' as MapPinKind,
   name: '',
   description: '',
   imageUrl: '',
