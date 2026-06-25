@@ -31,6 +31,12 @@ const apps: AppCard[] = [
     path: '/tools/png-to-webp',
     icon: 'lucide:image',
   },
+  {
+    name: '주사위 롤러',
+    description: '프리셋과 커스텀 수식으로 TRPG 주사위를 굴리는 도구',
+    path: '/tools/dice-roller',
+    icon: 'lucide:dices',
+  },
 ];
 </script>
 
