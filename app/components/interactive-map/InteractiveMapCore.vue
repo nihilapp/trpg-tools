@@ -242,6 +242,7 @@
       v-if='selectedPin'
       :pin='selectedPin'
       :is-editing='isEditing'
+      :is-deleting='isDeleting'
       :can-manage='isDevelopment'
       @close='closeModal'
       @edit='startEditing'
@@ -292,6 +293,7 @@ const createPosition = ref<{ x: number; y: number } | null>(null);
 const searchQuery = ref('');
 const createModeEnabled = ref(false);
 const isDraggingMode = ref(false);
+const isDeleting = ref(false);
 
 const filters = ref(interactiveMapKindOptions.map(option => ({
   ...option,
@@ -458,7 +460,7 @@ function selectPin(pin: MapPinData) {
 }
 
 function startEditing() {
-  if (!isDevelopment) {
+  if (!isDevelopment || isDeleting.value) {
     return;
   }
 
@@ -466,6 +468,10 @@ function startEditing() {
 }
 
 function closeModal() {
+  if (isDeleting.value) {
+    return;
+  }
+
   selectedPin.value = null;
   isEditing.value = false;
 }
@@ -679,6 +685,12 @@ async function savePin(updatedPin: MapPinData) {
 }
 
 async function deletePin(id: string) {
+  if (isDeleting.value) {
+    return;
+  }
+
+  isDeleting.value = true;
+
   try {
     const response = await fetch(`/api/interactive-map/pins/${id}`, {
       method: 'DELETE',
@@ -690,10 +702,14 @@ async function deletePin(id: string) {
 
     pins.value = pins.value.filter(pin => pin.id !== id);
     selectedPin.value = null;
+    isEditing.value = false;
     await updateMarkers();
   }
   catch (error) {
     showRequestError(error, '마커 삭제에 실패했습니다.');
+  }
+  finally {
+    isDeleting.value = false;
   }
 }
 

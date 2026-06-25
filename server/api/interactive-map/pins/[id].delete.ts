@@ -1,7 +1,7 @@
 import {
   assertDevelopmentWriteAllowed,
   readInteractiveMapData,
-  writeInteractiveMapData,
+  writeInteractiveMapData
 } from '../../../utils/interactive-map-storage';
 
 export default defineEventHandler(async (event) => {
@@ -17,13 +17,15 @@ export default defineEventHandler(async (event) => {
   }
 
   const mapData = await readInteractiveMapData();
-  const nextPins = mapData.pins.filter(pin => pin.id !== pinId);
+  const nextPins = mapData.pins.filter((pin) => pin.id !== pinId);
+  const deleted = nextPins.length !== mapData.pins.length;
 
-  if (nextPins.length === mapData.pins.length) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: '마커를 찾을 수 없습니다.',
-    });
+  if (!deleted) {
+    return {
+      success: true,
+      id: pinId,
+      deleted: false,
+    };
   }
 
   mapData.pins = nextPins;
@@ -32,5 +34,6 @@ export default defineEventHandler(async (event) => {
   return {
     success: true,
     id: pinId,
+    deleted: true,
   };
 });
