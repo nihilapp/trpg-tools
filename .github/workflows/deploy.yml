@@ -50,6 +50,10 @@ jobs:
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
       DEPLOY_PM2_NAME: ${{ secrets.DEPLOY_PM2_NAME || 'trpg-tools' }}
       DEPLOY_PORT_APP: ${{ secrets.DEPLOY_PORT_APP || '3000' }}
+      DEPLOY_PROXY_HOST: ${{ secrets.DEPLOY_PROXY_HOST }}
+      DEPLOY_PROXY_USER: ${{ secrets.DEPLOY_PROXY_USER || secrets.DEPLOY_USER }}
+      DEPLOY_PROXY_PORT: ${{ secrets.DEPLOY_PROXY_PORT || '22' }}
+      DEPLOY_PROXY_SSH_KEY: ${{ secrets.DEPLOY_PROXY_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
 
     steps:
       - name: Check deploy secret configuration
@@ -73,6 +77,11 @@ jobs:
           script_stop: true
           timeout: 90s
           command_timeout: 20m
+          proxy_host: ${{ env.DEPLOY_PROXY_HOST }}
+          proxy_username: ${{ env.DEPLOY_PROXY_USER }}
+          proxy_key: ${{ env.DEPLOY_PROXY_SSH_KEY }}
+          proxy_port: ${{ env.DEPLOY_PROXY_PORT }}
+          proxy_timeout: 90s
           script: |
             set -euo pipefail
 
