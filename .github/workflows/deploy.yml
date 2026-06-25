@@ -95,11 +95,14 @@ jobs:
             pnpm install --frozen-lockfile
             pnpm build
 
-            if command -v pm2 >/dev/null 2>&1; then
+            if systemctl list-unit-files trpg-tools.service >/dev/null 2>&1; then
+              systemctl restart trpg-tools.service
+              systemctl is-active --quiet trpg-tools.service
+            elif command -v pm2 >/dev/null 2>&1; then
               PORT="$APP_PORT" pm2 start .output/server/index.mjs --name "$APP_NAME" --update-env || \
               PORT="$APP_PORT" pm2 restart "$APP_NAME" --update-env
               pm2 save
             else
-              echo "pm2 is not installed on the server. Install pm2 or replace this section with systemd restart."
+              echo "No supported process manager found. Expected systemd trpg-tools.service or pm2."
               exit 1
             fi
