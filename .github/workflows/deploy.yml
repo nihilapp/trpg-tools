@@ -39,79 +39,43 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, trpg-tools-deploy]
     needs: build
     if: github.ref == 'refs/heads/master'
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/root/trpg-tools' }}
       DEPLOY_PM2_NAME: ${{ secrets.DEPLOY_PM2_NAME || 'trpg-tools' }}
       DEPLOY_PORT_APP: ${{ secrets.DEPLOY_PORT_APP || '3000' }}
-      DEPLOY_PROXY_HOST: ${{ secrets.DEPLOY_PROXY_HOST }}
-      DEPLOY_PROXY_USER: ${{ secrets.DEPLOY_PROXY_USER || secrets.DEPLOY_USER }}
-      DEPLOY_PROXY_PORT: ${{ secrets.DEPLOY_PROXY_PORT || '22' }}
-      DEPLOY_PROXY_SSH_KEY: ${{ secrets.DEPLOY_PROXY_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
 
     steps:
-      - name: Check deploy secret configuration
-        id: config
+      - name: Deploy locally on target server
         run: |
-          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_PATH" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "VPS deploy skipped: set DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, and DEPLOY_PATH repository secrets to enable deployment."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          APP_DIR="$DEPLOY_PATH"
+          APP_NAME="$DEPLOY_PM2_NAME"
+          APP_PORT="$DEPLOY_PORT_APP"
+
+          if [ ! -d "$APP_DIR/.git" ]; then
+            echo "Repository is not checked out at $APP_DIR"
+            exit 1
           fi
 
-      - name: Deploy over SSH
-        if: steps.config.outputs.configured == 'true'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ env.DEPLOY_HOST }}
-          username: ${{ env.DEPLOY_USER }}
-          key: ${{ env.DEPLOY_SSH_KEY }}
-          port: ${{ env.DEPLOY_PORT }}
-          script_stop: true
-          timeout: 90s
-          command_timeout: 20m
-          proxy_host: ${{ env.DEPLOY_PROXY_HOST }}
-          proxy_username: ${{ env.DEPLOY_PROXY_USER }}
-          proxy_key: ${{ env.DEPLOY_PROXY_SSH_KEY }}
-          proxy_port: ${{ env.DEPLOY_PROXY_PORT }}
-          proxy_timeout: 90s
-          script: |
-            set -euo pipefail
+          cd "$APP_DIR"
+          git fetch origin master
+          git reset --hard origin/master
 
-            APP_DIR="${{ env.DEPLOY_PATH }}"
-            APP_NAME="${{ env.DEPLOY_PM2_NAME }}"
-            APP_PORT="${{ env.DEPLOY_PORT_APP }}"
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
 
-            if [ ! -d "$APP_DIR/.git" ]; then
-              echo "Repository is not checked out at $APP_DIR"
-              echo "Create it once on the server, e.g.:"
-              echo "  git clone https://github.com/nihilapp/trpg-tools.git $APP_DIR"
-              exit 1
-            fi
-
-            cd "$APP_DIR"
-            git fetch origin master
-            git reset --hard origin/master
-
-            corepack enable
-            pnpm install --frozen-lockfile
-            pnpm build
-
-            if systemctl list-unit-files trpg-tools.service >/dev/null 2>&1; then
-              systemctl restart trpg-tools.service
-              systemctl is-active --quiet trpg-tools.service
-            elif command -v pm2 >/dev/null 2>&1; then
-              PORT="$APP_PORT" pm2 start .output/server/index.mjs --name "$APP_NAME" --update-env || \
-              PORT="$APP_PORT" pm2 restart "$APP_NAME" --update-env
-              pm2 save
-            else
-              echo "No supported process manager found. Expected systemd trpg-tools.service or pm2."
-              exit 1
-            fi
+          if systemctl list-unit-files trpg-tools.service >/dev/null 2>&1; then
+            systemctl restart trpg-tools.service
+            systemctl is-active --quiet trpg-tools.service
+          elif command -v pm2 >/dev/null 2>&1; then
+            PORT="$APP_PORT" pm2 start .output/server/index.mjs --name "$APP_NAME" --update-env ||             PORT="$APP_PORT" pm2 restart "$APP_NAME" --update-env
+            pm2 save
+          else
+            echo "No supported process manager found. Expected systemd trpg-tools.service or pm2."
+            exit 1
+          fi
